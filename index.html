@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Mochi VTuber</title>
+  <title>Mochi VTuber Mic</title>
   <style>
     * {
       box-sizing: border-box;
@@ -37,6 +37,11 @@
       object-fit: contain;
       transition: transform 0.08s ease-out;
       pointer-events: none;
+    }
+    .status {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #888;
     }
     .controls {
       margin-top: 16px;
@@ -75,17 +80,19 @@
     <button data-mood="enojado">Enojado</button>
     <button data-mood="triste">Triste</button>
     <button data-mood="enamorado">Enamorado</button>
-    <button id="mouthBtn">Boca: Cerrada</button>
   </div>
+  <div id="status" class="status">Micrófono desactivado. Toca en cualquier parte para iniciar.</div>
 
   <script>
     const mochi = document.getElementById("mochi");
-    const mouthBtn = document.getElementById("mouthBtn");
+    const statusDiv = document.getElementById("status");
     const moodButtons = document.querySelectorAll("[data-mood]");
 
     let mood = "normal";
     let mouthOpen = false;
     let blinking = false;
+    let recognition = null;
+    let silenceTimer = null;
 
     const mapSprites = {
       normal: {
@@ -127,6 +134,65 @@
       mochi.src = mouthOpen ? pair.open : pair.closed;
     }
 
+    function setMouth(open) {
+      if (mouthOpen !== open) {
+        mouthOpen = open;
+        updateSprite();
+      }
+      clearTimeout(silenceTimer);
+      if (open) {
+        silenceTimer = setTimeout(() => {
+          setMouth(false);
+        }, 500);
+      }
+    }
+
+    function initSpeech() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        statusDiv.textContent = "El navegador no soporta reconocimiento de voz.";
+        return;
+      }
+
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = "es-ES";
+
+      recognition.onstart = () => {
+        statusDiv.textContent = "Micrófono escuchando...";
+      };
+
+      recognition.onresult = (event) => {
+        let hasText = false;
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i][0].transcript.trim().length > 0) {
+            hasText = true;
+            break;
+          }
+        }
+        setMouth(hasText);
+      };
+
+      recognition.onerror = (event) => {
+        console.error("Error de voz:", event.error);
+      };
+
+      recognition.onend = () => {
+        try {
+          recognition.start();
+        } catch (e) {
+          statusDiv.textContent = "Toca la pantalla para reactivar el micro.";
+        }
+      };
+
+      try {
+        recognition.start();
+      } catch (e) {
+        statusDiv.textContent = "Toca la pantalla para activar el micrófono.";
+      }
+    }
+
     function moveWithPointer(clientX, clientY) {
       const nx = (clientX / window.innerWidth - 0.5) * 2;
       const ny = (clientY / window.innerHeight - 0.5) * 2;
@@ -142,6 +208,9 @@
 
     window.addEventListener("pointerdown", (e) => {
       moveWithPointer(e.clientX, e.clientY);
+      if (!recognition) {
+        initSpeech();
+      }
     });
 
     moodButtons.forEach((btn) => {
@@ -151,12 +220,6 @@
         mood = btn.dataset.mood;
         updateSprite();
       });
-    });
-
-    mouthBtn.addEventListener("click", () => {
-      mouthOpen = !mouthOpen;
-      mouthBtn.textContent = mouthOpen ? "Boca: Abierta" : "Boca: Cerrada";
-      updateSprite();
     });
 
     setInterval(() => {
